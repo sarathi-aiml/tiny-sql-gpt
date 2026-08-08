@@ -1,7 +1,7 @@
 # Tiny SQL GPT
 
 **A 841,216-parameter transformer, built from random weights, trained on a laptop CPU in 5 minutes.
-99.8% of the SQL it generates actually executes.**
+100% of the SQL it generates actually executes.**
 
 No pretrained weights. No HuggingFace model classes. No API keys. ~700 lines of Python you can read
 in one sitting.
@@ -18,17 +18,23 @@ SELECT status , SUM ( total ) FROM orders WHERE status = 'backorder' GROUP BY st
 ## Results
 
 Every number below is produced by `python evaluate.py --eval`, which generates 500 queries and
-runs them against a real SQLite database. Nothing is graded by eye.
+runs them against a real SQLite database. Nothing is graded by eye, and the run is seeded — you
+will get these exact numbers.
 
 | metric | TinyGPT (841K params) | bigram baseline |
 |---|---:|---:|
-| parses | **99.8%** | 2.8% |
-| **executes** | **99.8%** | 2.8% |
-| `GROUP BY` agrees with `SELECT` | **100.0%** | 4.8% |
-| novel (not in training set) | 11.8% | 99.0% |
-| validation loss | 0.661 | — |
+| parses | **100.0%** | 4.4% |
+| **executes** | **100.0%** | 4.4% |
+| `GROUP BY` agrees with `SELECT` | **100.0%** | 3.4% |
+| novel (not in training set) | 13.4% | 98.6% |
+| validation loss | 0.663 | — |
 
 The bigram baseline is there on purpose. A number without a baseline is decoration.
+
+100% is a real measurement, not a rounding flourish — but read it against the task. The grammar has
+14 query shapes over a 3-table schema and a 155-token vocabulary. A model that saturates *this* is
+not a text-to-SQL system; it's proof that the training loop works. The interesting number is the
+13.4% novelty, and the failure in the next section.
 
 ---
 
@@ -45,8 +51,8 @@ The same architecture at four sizes, same data, same code, all trained on one la
 
 | model | params | val loss | executes | **`GROUP BY` agrees** |
 |---|---:|---:|---:|---:|
-| nano | 24,736 | 0.696 | 98.4% | **37.3%** |
-| micro | 124,032 | 0.670 | 100.0% | **99.4%** |
+| nano | 24,736 | 0.696 | 99.6% | **41.4%** |
+| micro | 124,032 | 0.670 | 99.8% | **100.0%** |
 | tiny | 841,216 | 0.663 | 100.0% | 100.0% |
 | small | 4,834,816 | 0.665 | 100.0% | 100.0% |
 
@@ -54,13 +60,13 @@ The same architecture at four sizes, same data, same code, all trained on one la
 
 Three things fall out of this, and none of them is "bigger is better":
 
-**Syntax is nearly free.** `nano` — 24,736 parameters, one layer — writes SQL that executes 98.4%
+**Syntax is nearly free.** `nano` — 24,736 parameters, one layer — writes SQL that executes 99.6%
 of the time. Surface fluency is the cheapest thing a language model learns.
 
 **The long-range dependency is what costs parameters.** That same `nano` gets `GROUP BY` agreement
-right only 37.3% of the time — which is chance, since each table has three groupable columns. It
-learned what SQL *looks like* and nothing about the rule. Between 24K and 124K parameters it jumps
-to 99.4%. That is a phase transition you can watch happen on a laptop.
+right 41.4% of the time — barely above the ~33% you'd get by picking a groupable column at random.
+It learned what SQL *looks like* and almost nothing about the rule. Between 24K and 124K parameters
+it goes to 100%. That is a phase transition you can watch happen on a laptop.
 
 **Then it stops.** `small` has 200x the parameters of `nano` and is very slightly *worse* than
 `tiny` on validation loss. All four models converge to ~0.66, because ~0.66 is the entropy of the
@@ -80,9 +86,9 @@ So I trained `flat` — **one layer**, widened to match `micro`'s parameter coun
 
 | model | layers | params | `GROUP BY` agrees |
 |---|---:|---:|---:|
-| nano | 1 | 24,736 | 37.3% |
-| **flat** | **1** | **127,160** | **99.4%** |
-| micro | 2 | 124,032 | 99.4% |
+| nano | 1 | 24,736 | 41.4% |
+| **flat** | **1** | **127,160** | **100.0%** |
+| micro | 2 | 124,032 | 100.0% |
 
 **Identical.** At matched parameters, depth bought nothing — the hypothesis was wrong, and the
 nano→micro jump was capacity all along. Probing `flat`'s single layer finds head L0H1 at 55% on the
@@ -130,22 +136,22 @@ Three `(table, column)` pairs were **never** grouped during training — `orders
 So: did the model learn the *rule*, or the *pairs*?
 
 ```
-  [MISS] SELECT channel ... FROM orders GROUP BY -> carrier
-         p(channel)=0.0018  rank 6/155  |  control p=0.000462  ->  copy lift  3.9x
-  [MISS] SELECT product ... FROM sales    GROUP BY -> segment
-         p(product)=0.0006  rank 12/155  |  control p=0.000362  ->  copy lift  1.7x
+  [MISS] SELECT channel ... FROM orders    GROUP BY -> carrier
+         p(channel)=0.0012  rank 6/155  |  control p=0.000452  ->  copy lift   2.7x
+  [MISS] SELECT product ... FROM sales     GROUP BY -> segment
+         p(product)=0.0009  rank 8/155  |  control p=0.000352  ->  copy lift   2.6x
   [MISS] SELECT tier    ... FROM customers GROUP BY -> plan
-         p(tier)=0.0021    rank 4/155   |  control p=0.000262  ->  copy lift  7.9x
+         p(tier)=0.0039    rank 4/155  |  control p=0.000280  ->  copy lift  13.9x
 
-  0/3 correct on unseen pairs — mean copy lift 4.5x
+  0/3 correct on unseen pairs — mean copy lift 6.4x
 ```
 
 **0 out of 3.** But look closer before calling it a failure.
 
 *Copy lift* compares `p(col | SELECT col ... GROUP BY)` against a control prompt with a different
-`SELECT` column. Naming the column in `SELECT` raises its `GROUP BY` probability by **4.5x** — so
-the copy circuit found by L1H1 *is* firing. It just loses to a blanket prior against tokens that
-never appeared in that slot during training.
+`SELECT` column. Naming the column in `SELECT` raises its `GROUP BY` probability by **2.6x to
+13.9x** — so the copy circuit found by L1H1 *is* firing. It just loses to a blanket prior against
+tokens that never appeared in that slot during training.
 
 That is the whole story of hallucination, at 841K parameters:
 

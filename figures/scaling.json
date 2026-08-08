@@ -3,16 +3,16 @@
     "name": "nano",
     "params": 24736,
     "val_loss": 0.6955187320709229,
-    "executes_pct": 98.4,
-    "groupby_agrees_pct": 37.34939759036145,
+    "executes_pct": 99.6,
+    "groupby_agrees_pct": 41.37931034482759,
     "heldout_correct": 0
   },
   {
     "name": "micro",
     "params": 124032,
     "val_loss": 0.6699299812316895,
-    "executes_pct": 100.0,
-    "groupby_agrees_pct": 99.43820224719101,
+    "executes_pct": 99.8,
+    "groupby_agrees_pct": 100.0,
     "heldout_correct": 0
   },
   {

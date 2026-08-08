@@ -165,6 +165,7 @@ def heldout_probe(model, tok, device="cpu"):
 
 
 def run_eval(size="tiny", device="cpu", n=N_SAMPLES, quiet=False):
+    torch.manual_seed(T.SEED)   # sampling is stochastic; the report should not be
     ckpt = os.path.join(T.CKPT_DIR, f"{size}.pt")
     model, tok, _ = load_ckpt(ckpt, device)
     queries = load_queries()
