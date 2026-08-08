@@ -263,7 +263,21 @@ SIZES = {
     "micro": dict(n_layer=2, n_head=4, n_embd=64),
     "tiny":  dict(n_layer=4, n_head=4, n_embd=128),
     "small": dict(n_layer=6, n_head=8, n_embd=256),
+    # ABLATION, not a rung on the ladder. Same parameter count as `micro`
+    # (~125K) but ONE layer instead of two. nano -> micro improved depth AND
+    # width at once; this separates them.
+    #
+    # RESULT: flat scores 99.4% GROUP BY agreement — identical to micro.
+    # The hypothesis that this dependency needs two layers to compose is
+    # WRONG for this task. At matched parameters, depth buys nothing; the
+    # nano -> micro jump was capacity. One head can attend from "after
+    # GROUP BY" to "after SELECT" using position and syntax alone, with no
+    # previous-token head to compose with. (Copying arbitrary *novel* bigrams
+    # — true induction — is a harder job and is the case that needs 2 layers.)
+    "flat":  dict(n_layer=1, n_head=4, n_embd=88),
 }
+
+LADDER = ["nano", "micro", "tiny", "small"]   # the scaling curve, minus ablations
 
 
 class CausalSelfAttention(nn.Module):

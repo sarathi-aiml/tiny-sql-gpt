@@ -39,13 +39,60 @@ The bigram baseline is there on purpose. A number without a baseline is decorati
 Generated SQL is run against a real database. It works or it doesn't — no human judgement, no
 vibes. This is the difference between "look, it makes plausible text" and a measurement.
 
-### 2. A scaling curve
+### 2. A scaling curve — and it does not say what you'd expect
 
 The same architecture at four sizes, same data, same code, all trained on one laptop.
 
-<!-- SCALING_TABLE -->
+| model | params | val loss | executes | **`GROUP BY` agrees** |
+|---|---:|---:|---:|---:|
+| nano | 24,736 | 0.696 | 98.4% | **37.3%** |
+| micro | 124,032 | 0.670 | 100.0% | **99.4%** |
+| tiny | 841,216 | 0.663 | 100.0% | 100.0% |
+| small | 4,834,816 | 0.665 | 100.0% | 100.0% |
 
 ![scaling](figures/scaling.png)
+
+Three things fall out of this, and none of them is "bigger is better":
+
+**Syntax is nearly free.** `nano` — 24,736 parameters, one layer — writes SQL that executes 98.4%
+of the time. Surface fluency is the cheapest thing a language model learns.
+
+**The long-range dependency is what costs parameters.** That same `nano` gets `GROUP BY` agreement
+right only 37.3% of the time — which is chance, since each table has three groupable columns. It
+learned what SQL *looks like* and nothing about the rule. Between 24K and 124K parameters it jumps
+to 99.4%. That is a phase transition you can watch happen on a laptop.
+
+**Then it stops.** `small` has 200x the parameters of `nano` and is very slightly *worse* than
+`tiny` on validation loss. All four models converge to ~0.66, because ~0.66 is the entropy of the
+data generator — it picks tables, columns and values at random, and no model can predict a coin
+flip. That floor is a property of the data, not a limitation of the models.
+
+The useful question was never "is bigger better." It's **where does the curve bend for my task** —
+because past that point, more parameters buy nothing. That's measurable in an afternoon.
+
+#### An ablation, and a hypothesis that died
+
+`nano` → `micro` changed depth *and* width at once, so the jump above is confounded. My hypothesis
+was depth: copying a token from earlier in the sequence sounds like it needs one attention operation
+to locate it and a second to move it.
+
+So I trained `flat` — **one layer**, widened to match `micro`'s parameter count:
+
+| model | layers | params | `GROUP BY` agrees |
+|---|---:|---:|---:|
+| nano | 1 | 24,736 | 37.3% |
+| **flat** | **1** | **127,160** | **99.4%** |
+| micro | 2 | 124,032 | 99.4% |
+
+**Identical.** At matched parameters, depth bought nothing — the hypothesis was wrong, and the
+nano→micro jump was capacity all along. Probing `flat`'s single layer finds head L0H1 at 55% on the
+`SELECT` column, 6.6x uniform. One layer is enough.
+
+In hindsight it's clear why: attending from "just after `GROUP BY`" to "just after `SELECT`" can be
+done from position and syntax alone. There's no previous-token head to compose with. Copying
+arbitrary *novel* bigrams is the harder job, and that's the case that needs two layers.
+
+Reproduce with `python tiny_gpt.py --train --size flat` and `python evaluate.py --eval --size flat`.
 
 ### 3. An interpretability finding
 
@@ -72,7 +119,7 @@ query: SELECT region , SUM ( qty ) FROM sales GROUP BY
 **Layer 1, head 1 learned `GROUP BY` agreement.** Not a textbook diagram — an actual head in an
 actual model, found on a laptop, reproducible with one command.
 
-![attention](figures/attention.png)
+![attention](figures/attention-tiny.png)
 
 ---
 
@@ -122,13 +169,18 @@ python tiny_gpt.py --explain           # open the black box
 
 python evaluate.py --eval              # the headline number
 python evaluate.py --attention         # probe all 16 heads
-python evaluate.py --scaling           # train all 4 sizes + chart (~40 min)
+python evaluate.py --scaling           # the full curve + chart
+python evaluate.py --plot              # re-render the chart from saved results
 
 python test_tiny_gpt.py                # 11 tests, no framework
 ```
 
-A trained checkpoint is committed, so `--generate`, `--explain`, `--eval` and `--attention` all
-work without training anything.
+Trained checkpoints for `nano`, `micro`, `flat` and `tiny` are committed, so `--generate`,
+`--explain`, `--eval`, `--attention` and the ablation all work without training anything.
+`small` (19 MB) is not committed — `--scaling` reuses the checkpoints it finds and trains only
+`small`, about 30 minutes on a laptop CPU. Everything else in `--scaling` is instant.
+
+Sizes: `--size nano | micro | flat | tiny | small`.
 
 ---
 

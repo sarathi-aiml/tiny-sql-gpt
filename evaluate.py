@@ -241,11 +241,22 @@ def run_scaling(steps=2000, device="cpu", sizes=None):
     splits = make_splits(corpus)
     results = []
 
-    for name in (sizes or list(SIZES)):
-        cfg = Config(name=name, vocab_size=len(tok), **SIZES[name])
-        model, hist = train(cfg, splits, steps=steps, device=device,
-                            log_every=max(steps // 2, 1))
-        T.save_ckpt(model, tok, hist, os.path.join(T.CKPT_DIR, f"{name}.pt"))
+    for name in (sizes or T.LADDER):
+        path = os.path.join(T.CKPT_DIR, f"{name}.pt")
+        # Reuse a checkpoint only if it was trained for the same number of
+        # steps — otherwise the curve would compare models trained unequally.
+        model = hist = None
+        if os.path.exists(path):
+            m, _, h = load_ckpt(path, device)
+            if h and h[-1]["step"] == steps:
+                print(f"[{name}] reusing checkpoint ({m.n_params():,} params, "
+                      f"{steps} steps)")
+                model, hist = m, h
+        if model is None:
+            cfg = Config(name=name, vocab_size=len(tok), **SIZES[name])
+            model, hist = train(cfg, splits, steps=steps, device=device,
+                                log_every=max(steps // 2, 1))
+            T.save_ckpt(model, tok, hist, path)
         r = run_eval(name, device, quiet=True)
         results.append({
             "name": name, "params": model.n_params(),
@@ -282,21 +293,31 @@ def plot_scaling(results):
         print("(matplotlib not installed — skipping chart)")
         return
     x = [r["params"] for r in results]
-    fig, ax = plt.subplots(1, 2, figsize=(11, 4.2))
-    ax[0].plot(x, [r["executes_pct"] for r in results], "o-", lw=2)
+    fig, ax = plt.subplots(1, 2, figsize=(11.5, 4.4))
+
+    # Syntax saturates almost immediately; the long-range dependency does not.
+    # Plotting both on one axis is the actual lesson about what scale buys you.
+    ax[0].plot(x, [r["executes_pct"] for r in results], "o-", lw=2,
+               label="executes (syntax)")
+    ax[0].plot(x, [r["groupby_agrees_pct"] for r in results], "s--", lw=2,
+               color="darkorange", label="GROUP BY agrees (long-range)")
     ax[0].set_xscale("log"); ax[0].set_ylim(-5, 105)
-    ax[0].set_xlabel("parameters"); ax[0].set_ylabel("% of generated SQL that runs")
-    ax[0].set_title("Bigger model, more valid SQL")
+    ax[0].set_xlabel("parameters"); ax[0].set_ylabel("percent")
+    ax[0].set_title("Syntax is cheap. The dependency is what costs parameters.")
+    ax[0].legend(fontsize=8, loc="lower right")
+
     ax[1].plot(x, [r["val_loss"] for r in results], "o-", lw=2, color="crimson")
     ax[1].set_xscale("log")
     ax[1].set_xlabel("parameters"); ax[1].set_ylabel("validation loss")
     ax[1].set_title("Loss vs scale")
+
     for a in ax:
         a.grid(alpha=.3)
+        lo = a.get_ylim()[0]
         for r in results:
-            a.annotate(r["name"], (r["params"], 0), textcoords="offset points",
+            a.annotate(r["name"], (r["params"], lo), textcoords="offset points",
                        xytext=(0, 6), ha="center", fontsize=8, alpha=.7)
-    fig.suptitle("Tiny SQL GPT — trained from random weights on a laptop")
+    fig.suptitle("Tiny SQL GPT — same data, same code, one laptop")
     fig.tight_layout()
     out = os.path.join(FIG_DIR, "scaling.png")
     fig.savefig(out, dpi=150)
@@ -350,11 +371,11 @@ def run_attention(size="tiny", device="cpu"):
         if best_mass > 3 * uniform else
         "no single head owns this dependency — it is distributed. "
         "Honest negative; the textbook diagram is cleaner than reality."))
-    plot_attention(best_att, toks, bl, bh)
+    plot_attention(best_att, toks, bl, bh, size)
     return rows
 
 
-def plot_attention(att, toks, layer, head):
+def plot_attention(att, toks, layer, head, size="tiny"):
     try:
         import matplotlib
         matplotlib.use("Agg")
@@ -367,11 +388,11 @@ def plot_attention(att, toks, layer, head):
     ax.set_xticks(range(len(toks))); ax.set_xticklabels(toks, rotation=90, fontsize=8)
     ax.set_yticks(range(len(toks))); ax.set_yticklabels(toks, fontsize=8)
     ax.set_xlabel("attending to"); ax.set_ylabel("token at position")
-    ax.set_title(f"Tiny SQL GPT — layer {layer}, head {head}\n"
+    ax.set_title(f"Tiny SQL GPT ({size}) — layer {layer}, head {head}\n"
                  f"lower triangle only: it cannot see the future")
     fig.colorbar(im, shrink=.8)
     fig.tight_layout()
-    out = os.path.join(FIG_DIR, "attention.png")
+    out = os.path.join(FIG_DIR, f"attention-{size}.png")
     fig.savefig(out, dpi=150)
     print(f"  heatmap -> {out}\n")
 
@@ -381,6 +402,8 @@ def main():
     ap.add_argument("--eval", action="store_true")
     ap.add_argument("--scaling", action="store_true")
     ap.add_argument("--attention", action="store_true")
+    ap.add_argument("--plot", action="store_true",
+                    help="re-render the chart from figures/scaling.json")
     ap.add_argument("--size", default="tiny", choices=list(SIZES))
     ap.add_argument("--steps", type=int, default=2000)
     ap.add_argument("--n", type=int, default=N_SAMPLES)
@@ -388,7 +411,10 @@ def main():
     args = ap.parse_args()
     device = T.pick_device(args.device)
 
-    if args.eval:
+    if args.plot:
+        with open(os.path.join(FIG_DIR, "scaling.json")) as f:
+            plot_scaling(json.load(f))
+    elif args.eval:
         run_eval(args.size, device, args.n)
     elif args.scaling:
         run_scaling(args.steps, device)
