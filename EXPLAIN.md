@@ -10,9 +10,9 @@ No maths. Five minutes.
 You use a language model like this:
 
 ```
-   your agent  ──►  the API         ──►  ┌─────────┐  ──►  text
-                                         │    ?    │
-                                         └─────────┘
+   your agent  ──►  the API  ──►  ┌─────────┐  ──►  text
+                                  │    ?    │
+                                  └─────────┘
 ```
 
 Nobody shows you inside the box. So I built a very small box you can see all of:

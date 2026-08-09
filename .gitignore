@@ -4,3 +4,8 @@ data/
 .DS_Store
 checkpoints/small.pt
 hf/tiny-sql-gpt/
+
+# private working docs — not for publication
+PLAN.md
+POSTS.md
+tiny-starship-project-brief.md
