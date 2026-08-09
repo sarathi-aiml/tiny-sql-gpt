@@ -1,5 +1,8 @@
 # Tiny SQL GPT
 
+> **The goal:** build a language model from scratch, end to end, small enough to understand every
+> part of it, and in doing so understand how the large ones actually work.
+
 **A 841,216-parameter transformer, built from random weights, trained on a laptop CPU in 5 minutes.
 100% of the SQL it generates actually executes.**
 

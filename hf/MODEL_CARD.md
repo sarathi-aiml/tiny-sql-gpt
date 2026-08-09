@@ -15,6 +15,9 @@ library_name: pytorch
 
 # Tiny SQL GPT
 
+> **The goal:** build a language model from scratch, end to end, small enough to understand every
+> part of it, and in doing so understand how the large ones actually work.
+
 **A 841,216-parameter decoder-only transformer, trained from random weights on a laptop CPU in
 five minutes. 100% of the SQL it generates executes against a real database.**
 
