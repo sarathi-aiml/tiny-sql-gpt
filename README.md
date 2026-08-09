@@ -41,6 +41,41 @@ not a text-to-SQL system; it's proof that the training loop works. The interesti
 
 ---
 
+## Where the model actually is
+
+Fair question, and the one this repo gets asked most. **The model is one file: `tiny_gpt.py`.**
+Every other Python file in the repo is scaffolding around it — none of them contain a model.
+
+| file | contains the model? | what it's for |
+|---|---|---|
+| **`tiny_gpt.py`** | **yes — all of it** | schema, data generation, tokenizer, model, training loop, sampling, `--explain` |
+| `evaluate.py` | no | runs generated SQL against SQLite, scaling curve, attention probe |
+| `inference.py` | no | loads a checkpoint and generates. Imports the model from `tiny_gpt.py` |
+| `test_tiny_gpt.py` | no | 11 tests |
+| `push_to_hub.py` | no | packages and uploads to Hugging Face |
+
+Inside `tiny_gpt.py`, the model itself is §4 — roughly 120 lines covering `CausalSelfAttention`,
+`Block`, and `TinyGPT`. Everything imported is `torch`, `torch.nn`, and the standard library.
+There is no `transformers`, no `AutoModel`, no pretrained anything.
+
+### How it was actually trained
+
+Exactly these commands, in this order, on a MacBook CPU — no GPU, no cloud:
+
+```bash
+python tiny_gpt.py --data                        # 100,000 queries      ~2 sec
+python tiny_gpt.py --train --size tiny --steps 3000   # 841,216 params  ~5 min
+python evaluate.py --eval                        # 500 queries vs SQLite  ~1 min
+python evaluate.py --attention                   # probe all 16 heads    instant
+python evaluate.py --scaling --steps 3000        # all four sizes       ~40 min
+```
+
+Training is `torch.optim.AdamW` over random 64-token windows of the corpus, cross-entropy on the
+next token, 3,000 steps at batch 64. Loss went `4.62 → 0.66`. That is the entire training story —
+the loop is ~25 lines in §6 and you can read all of it.
+
+---
+
 ## Three things this repo does that a tutorial doesn't
 
 ### 1. An executable metric
