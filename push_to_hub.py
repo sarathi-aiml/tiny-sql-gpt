@@ -31,23 +31,45 @@ TEMPLATE = os.path.join(HERE, "hf", "MODEL_CARD.md")
 CODE_FILES = ["tiny_gpt.py", "inference.py"]
 
 
-def stage(repo_id, ckpt):
-    """Refresh the staging folder and point the model card at the real repo."""
+def github_slug():
+    """owner/repo of the git origin remote.
+
+    The Hub account and the GitHub account are not necessarily the same name,
+    so the card's GitHub links must come from the actual remote rather than
+    being derived from the Hub repo id.
+    """
+    import subprocess
+    try:
+        url = subprocess.check_output(
+            ["git", "-C", HERE, "remote", "get-url", "origin"],
+            text=True, stderr=subprocess.DEVNULL).strip()
+    except Exception:
+        return None
+    slug = url.split("github.com")[-1].lstrip(":/")
+    return slug[:-4] if slug.endswith(".git") else slug
+
+
+def stage(repo_id, ckpt, gh_slug=None):
+    """Refresh the staging folder and point the model card at the real repos."""
     model = TinySQLGPT.from_pretrained(ckpt)
     wrote = model.export(STAGE)
 
     for fn in CODE_FILES:
         shutil.copy2(os.path.join(HERE, fn), os.path.join(STAGE, fn))
 
+    gh = gh_slug or github_slug()
+    if not gh:
+        raise SystemExit("No git origin remote. Pass --github OWNER/REPO.")
+
     # Render the card from the template every time, so staging is idempotent
     # and re-runnable with any repo id.
     with open(TEMPLATE) as f:
         text = f.read()
-    owner = repo_id.split("/")[0]
+    text = text.replace("github.com/USERNAME/tiny-sql-gpt", f"github.com/{gh}")
     text = text.replace("USERNAME/tiny-sql-gpt", repo_id)
-    text = text.replace("github.com/USERNAME/", f"github.com/{owner}/")
     with open(os.path.join(STAGE, "README.md"), "w") as f:
         f.write(text)
+    print(f"card -> hub: {repo_id}   github: {gh}")
 
     files = sorted(os.listdir(STAGE))
     print(f"staged {STAGE}:")
@@ -63,12 +85,13 @@ def main():
     ap = argparse.ArgumentParser(description="Publish Tiny SQL GPT to the Hub")
     ap.add_argument("--repo-id", required=True, help="e.g. yourname/tiny-sql-gpt")
     ap.add_argument("--ckpt", default=os.path.join(HERE, "checkpoints", "tiny.pt"))
+    ap.add_argument("--github", help="OWNER/REPO for card links (default: git origin)")
     ap.add_argument("--private", action="store_true")
     ap.add_argument("--dry-run", action="store_true",
                     help="stage and print, upload nothing")
     args = ap.parse_args()
 
-    stage(args.repo_id, args.ckpt)
+    stage(args.repo_id, args.ckpt, args.github)
 
     if args.dry_run:
         print("\n--dry-run: nothing uploaded.")
