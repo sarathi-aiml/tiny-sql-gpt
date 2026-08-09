@@ -6,6 +6,9 @@
 No pretrained weights. No HuggingFace model classes. No API keys. ~700 lines of Python you can read
 in one sitting.
 
+> **New to what's inside a language model?** Start with **[EXPLAIN.md](EXPLAIN.md)** — the same
+> project with no maths and no jargon, in five minutes. This page is the detailed version.
+
 ```
 $ python tiny_gpt.py --generate 3
 SELECT segment , COUNT ( * ) FROM sales GROUP BY segment ;
@@ -170,8 +173,11 @@ pip install -r requirements.txt
 
 python tiny_gpt.py --data              # generate 100,000 SQL queries (~2s)
 python tiny_gpt.py --train             # train 841K params (~5 min, CPU)
-python tiny_gpt.py --generate 10       # write some SQL
 python tiny_gpt.py --explain           # open the black box
+
+python inference.py                    # write some SQL
+python inference.py --run              # write it AND execute it against SQLite
+python inference.py --probs "SELECT region , SUM ( qty ) FROM sales GROUP BY"
 
 python evaluate.py --eval              # the headline number
 python evaluate.py --attention         # probe all 16 heads
@@ -285,14 +291,23 @@ Inside one attention head:
 ## Layout
 
 ```
+EXPLAIN.md         the no-jargon version. start here if you build with LLMs
+                   but have never looked inside one.
+
 tiny_gpt.py        §1 schema  §2 data  §3 tokenizer  §4 model
                    §5 bigram  §6 train §7 generate   §8 explain  §9 cli
+inference.py       run the model. no training code, no eval harness.
 evaluate.py        executable eval · scaling curve · attention probe
 test_tiny_gpt.py   11 tests, plain asserts
+
+push_to_hub.py     package + publish to the Hugging Face Hub
+hf/MODEL_CARD.md   the model card template
+
 PLAN.md            the design doc this was built from
+POSTS.md           write-ups drafted from these results
 data/              generated corpus + manifest (seed 1337)
 checkpoints/       trained models
-figures/           scaling curve, attention heatmap
+figures/           scaling curve, attention heatmaps
 ```
 
 The core model lives in **one file** on purpose. The teaching value dies the moment a reader has to

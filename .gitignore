@@ -3,3 +3,4 @@ __pycache__/
 data/
 .DS_Store
 checkpoints/small.pt
+hf/tiny-sql-gpt/
