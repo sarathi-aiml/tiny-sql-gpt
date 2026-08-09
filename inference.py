@@ -1,5 +1,5 @@
 """
-Inference only — no training, no evaluation harness.
+Inference only. No training, no evaluation harness.
 
 This is the file to read if you just want to run the model, and the file the
 Hugging Face repo is built around.
@@ -105,7 +105,7 @@ class TinySQLGPT:
         """What the model thinks comes next, as (token, probability) pairs.
 
         The whole distribution is only 155 wide, so `top=None` really does
-        return all of it — the thing you cannot do with a frontier model.
+        return all of it, the thing you cannot do with a frontier model.
         """
         with torch.no_grad():
             logits, _ = self.model(self._ids(prompt))
@@ -123,7 +123,7 @@ class TinySQLGPT:
     def export(self, outdir):
         """Write a Hugging Face style folder: config.json + weights.
 
-        Deliberately avoids a pickled checkpoint — nobody should have to run
+        Deliberately avoids a pickled checkpoint. Nobody should have to run
         torch.load(weights_only=False) on a stranger's file.
         """
         os.makedirs(outdir, exist_ok=True)
@@ -145,7 +145,7 @@ class TinySQLGPT:
 
 
 def main():
-    ap = argparse.ArgumentParser(description="Tiny SQL GPT — inference")
+    ap = argparse.ArgumentParser(description="Tiny SQL GPT inference")
     ap.add_argument("--model", default=DEFAULT_CKPT,
                     help=".pt file, Hub-layout directory, or HF repo id")
     ap.add_argument("--prompt", default="", help="text to continue")

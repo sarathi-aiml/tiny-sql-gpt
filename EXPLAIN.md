@@ -49,7 +49,7 @@ Same three steps. More dials.
            130     147    99   131
 
      ↳ The model never sees letters. It sees a list of integers.
-       This is why LLMs can't count the r's in "strawberry" — they never
+       This is why LLMs can't count the r's in "strawberry". They never
        received the letters, only a few token numbers.
 
 
@@ -70,7 +70,7 @@ Same three steps. More dials.
      ↳ It made that up. Not copied from the textbook.
 
 
- ⑤  CHECK IT — BY ACTUALLY RUNNING THE SQL
+ ⑤  CHECK IT BY ACTUALLY RUNNING THE SQL
 
      Run every generated query against a real database. It works, or it errors.
 
@@ -95,7 +95,7 @@ Why that matters: to get this right, the model has to **look back** at something
 words earlier. Looking back is the entire reason the "attention" mechanism exists.
 
 I planted the rule so that later I could go and check whether the model really learned to look
-back — and find exactly *where* inside it that happens.
+back, and find exactly *where* inside it that happens.
 
 ---
 
@@ -110,7 +110,7 @@ back — and find exactly *where* inside it that happens.
      ↳ A model smaller than a phone photo writes working SQL.
 
 
- ②  YOU NEED LESS MODEL THAN YOU THINK — UNTIL SUDDENLY YOU DON'T
+ ②  YOU NEED LESS MODEL THAN YOU THINK, UNTIL SUDDENLY YOU DON'T
 
        25,000 dials  →  writes SQL that runs        ✓
                      →  gets the look-back rule?    ✗   (random guessing)
@@ -122,7 +122,7 @@ back — and find exactly *where* inside it that happens.
 
      ↳ Grammar is cheap. Meaning costs about 5x more. After that you are
        paying for nothing.
-     ↳ This is the "fine-tune something small vs. just call GPT-5" decision,
+     ↳ This is the "fine-tune something small vs. just call a big API" decision,
        turned into a measurement instead of an opinion.
 
 
@@ -141,7 +141,7 @@ back — and find exactly *where* inside it that happens.
 
 The model gets the look-back rule right **100% of the time** on column names it saw in training.
 
-So I hid three column names from that position during training — the words exist elsewhere in the
+So I hid three column names from that position during training. The words exist elsewhere in the
 data, they just never appear right after `GROUP BY`. Then I asked for them:
 
 ```
@@ -151,7 +151,7 @@ data, they just never appear right after `GROUP BY`. Then I asked for them:
 
 Every time. Confidently.
 
-**That is what hallucination is.** Not a bug, not a glitch — the model reaching for the familiar
+**That is what hallucination is.** Not a bug, not a glitch. The model reaches for the familiar
 thing when the correct thing is unfamiliar. Here it happens in a model small enough to point at the
 exact cause.
 
@@ -168,7 +168,7 @@ Anyone can claim a model works. These are the things that make it checkable:
 - **A seed.** Run it yourself, get the same numbers to the decimal.
 - **A held-out test.** Three cases deliberately hidden from training.
 - **A published negative.** The model fails that test, and I say so.
-- **A control experiment.** I had a theory for *why* the 125,000-dial model succeeded — that it
+- **A control experiment.** I had a theory for *why* the 125,000-dial model succeeded: that it
   needed two layers to do the look-back. I tested it with a one-layer model of the same size.
   My theory was wrong. It's in the repo.
 

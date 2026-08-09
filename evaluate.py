@@ -76,7 +76,7 @@ def groupby_agrees(q):
 
     The rule the training data always follows: the column after GROUP BY is
     the same column that appears first in SELECT. Learning this requires
-    looking back ~8 tokens — which is exactly what attention is for.
+    looking back ~8 tokens, which is exactly what attention is for.
     """
     toks = q.split()
     if "GROUP" not in toks:
@@ -132,7 +132,7 @@ def heldout_probe(model, tok, device="cpu"):
     We prompt up to `GROUP BY` and ask what it wants to say next.
 
     A bare pass/fail is not enough. If it says the wrong column, we still want
-    to know whether the copy circuit fired at all — so we run a CONTROL prompt
+    to know whether the copy circuit fired at all, so we run a CONTROL prompt
     with a different SELECT column and compare. The ratio isolates the effect
     of the SELECT column from the model's blanket prior over tokens:
 
@@ -191,10 +191,10 @@ def run_eval(size="tiny", device="cpu", n=N_SAMPLES, quiet=False):
 def report(res, gpt_q, bg_q):
     g, b = res["gpt"], res["bigram"]
     print("\n" + "=" * 68)
-    print(f"EXECUTABLE EVAL — {g['n']} generated queries, run against real SQLite")
+    print(f"EXECUTABLE EVAL: {g['n']} generated queries, run against real SQLite")
     print("=" * 68)
     print(f"{'metric':<26}{'TinyGPT':>12}{'bigram':>12}")
-    print(f"{'params':<26}{res['params']:>12,}{'—':>12}")
+    print(f"{'params':<26}{res['params']:>12,}{'n/a':>12}")
     print("-" * 50)
     for k, label in [("parses_pct", "parses"),
                      ("executes_pct", "EXECUTES"),
@@ -204,7 +204,7 @@ def report(res, gpt_q, bg_q):
         print(f"{label:<26}{g[k]:>11.1f}%{b[k]:>11.1f}%")
 
     print("\n" + "=" * 68)
-    print("GENERALIZATION — (table, column) pairs never grouped during training")
+    print("GENERALIZATION: (table, column) pairs never grouped during training")
     print("=" * 68)
     for r in res["heldout"]:
         mark = "OK " if r["correct"] else "MISS"
@@ -216,7 +216,7 @@ def report(res, gpt_q, bg_q):
     hits = sum(r["correct"] for r in res["heldout"])
     lift = sum(r["lift"] for r in res["heldout"]) / len(res["heldout"])
     print(f"\n  {hits}/{len(res['heldout'])} correct on unseen pairs")
-    print(f"  mean copy lift: {lift:.1f}x — naming the column in SELECT raises")
+    print(f"  mean copy lift: {lift:.1f}x. Naming the column in SELECT raises")
     print(f"  its GROUP BY probability by this much, even when it still loses.")
 
     print("\n" + "=" * 68)
@@ -232,7 +232,7 @@ def report(res, gpt_q, bg_q):
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# The scaling curve — same data, same code, four sizes, one laptop
+# The scaling curve: same data, same code, four sizes, one laptop
 # ─────────────────────────────────────────────────────────────────────────────
 
 def run_scaling(steps=2000, device="cpu", sizes=None):
@@ -245,7 +245,7 @@ def run_scaling(steps=2000, device="cpu", sizes=None):
     for name in (sizes or T.LADDER):
         path = os.path.join(T.CKPT_DIR, f"{name}.pt")
         # Reuse a checkpoint only if it was trained for the same number of
-        # steps — otherwise the curve would compare models trained unequally.
+        # steps, otherwise the curve would compare models trained unequally.
         model = hist = None
         if os.path.exists(path):
             m, _, h = load_ckpt(path, device)
@@ -269,7 +269,7 @@ def run_scaling(steps=2000, device="cpu", sizes=None):
         print(f"  -> {r['gpt']['executes_pct']:.1f}% executable\n")
 
     print("=" * 68)
-    print("SCALING — same data, same code, four model sizes")
+    print("SCALING: same data, same code, four model sizes")
     print("=" * 68)
     print(f"{'model':<9}{'params':>11}{'val loss':>11}{'executes':>11}"
           f"{'GB agrees':>11}{'heldout':>9}")
@@ -291,7 +291,7 @@ def plot_scaling(results):
         matplotlib.use("Agg")
         import matplotlib.pyplot as plt
     except ImportError:
-        print("(matplotlib not installed — skipping chart)")
+        print("(matplotlib not installed, skipping chart)")
         return
     x = [r["params"] for r in results]
     fig, ax = plt.subplots(1, 2, figsize=(11.5, 4.4))
@@ -318,7 +318,7 @@ def plot_scaling(results):
         for r in results:
             a.annotate(r["name"], (r["params"], lo), textcoords="offset points",
                        xytext=(0, 6), ha="center", fontsize=8, alpha=.7)
-    fig.suptitle("Tiny SQL GPT — same data, same code, one laptop")
+    fig.suptitle("Tiny SQL GPT: same data, same code, one laptop")
     fig.tight_layout()
     out = os.path.join(FIG_DIR, "scaling.png")
     fig.savefig(out, dpi=150)
@@ -326,7 +326,7 @@ def plot_scaling(results):
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Attention probe — is there a head that learned GROUP BY agreement?
+# Attention probe: is there a head that learned GROUP BY agreement?
 # ─────────────────────────────────────────────────────────────────────────────
 
 def run_attention(size="tiny", device="cpu"):
@@ -343,7 +343,7 @@ def run_attention(size="tiny", device="cpu"):
 
     target = toks.index("region")          # the SELECT column position
     print("\n" + "=" * 68)
-    print("ATTENTION PROBE — GROUP BY -> SELECT agreement")
+    print("ATTENTION PROBE: GROUP BY -> SELECT agreement")
     print("=" * 68)
     print(f"query    : {prompt}")
     print(f"question : predicting the token after GROUP BY, does any head look")
@@ -362,7 +362,7 @@ def run_attention(size="tiny", device="cpu"):
         print(f"  L{li}H{h}   {mass:5.3f}  {bar}")
 
     best_mass, bl, bh, best_att = rows[0]
-    print(f"\n  best: layer {bl}, head {bh} — {best_mass:.1%} of its attention")
+    print(f"\n  best: layer {bl}, head {bh}, {best_mass:.1%} of its attention")
     print(f"        from the final position lands on the SELECT column.")
     uniform = 1.0 / len(toks)
     print(f"  uniform baseline would be {uniform:.1%} "
@@ -370,7 +370,7 @@ def run_attention(size="tiny", device="cpu"):
     print("\n  VERDICT: " + (
         "a head learned the GROUP BY dependency."
         if best_mass > 3 * uniform else
-        "no single head owns this dependency — it is distributed. "
+        "no single head owns this dependency, it is distributed. "
         "Honest negative; the textbook diagram is cleaner than reality."))
     plot_attention(best_att, toks, bl, bh, size)
     return rows
@@ -389,7 +389,7 @@ def plot_attention(att, toks, layer, head, size="tiny"):
     ax.set_xticks(range(len(toks))); ax.set_xticklabels(toks, rotation=90, fontsize=8)
     ax.set_yticks(range(len(toks))); ax.set_yticklabels(toks, fontsize=8)
     ax.set_xlabel("attending to"); ax.set_ylabel("token at position")
-    ax.set_title(f"Tiny SQL GPT ({size}) — layer {layer}, head {head}\n"
+    ax.set_title(f"Tiny SQL GPT ({size}), layer {layer}, head {head}\n"
                  f"lower triangle only: it cannot see the future")
     fig.colorbar(im, shrink=.8)
     fig.tight_layout()
@@ -399,7 +399,7 @@ def plot_attention(att, toks, layer, head, size="tiny"):
 
 
 def main():
-    ap = argparse.ArgumentParser(description="Tiny SQL GPT — evaluation")
+    ap = argparse.ArgumentParser(description="Tiny SQL GPT evaluation")
     ap.add_argument("--eval", action="store_true")
     ap.add_argument("--scaling", action="store_true")
     ap.add_argument("--attention", action="store_true")

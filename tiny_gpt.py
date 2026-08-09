@@ -1,5 +1,5 @@
 """
-Tiny SQL GPT — a ~1M parameter transformer, built from random weights,
+Tiny SQL GPT: a ~1M parameter transformer, built from random weights,
 trained on a laptop, that writes SQL you can actually run.
 
 No pretrained weights. No HuggingFace model classes. Just PyTorch tensors.
@@ -43,7 +43,7 @@ SAVE_ATTN = False
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# §1  SCHEMA — three small tables. Deliberately generic so anyone can read it.
+# §1  SCHEMA: three small tables. Deliberately generic so anyone can read it.
 # ─────────────────────────────────────────────────────────────────────────────
 
 # Four categorical columns per table is deliberate. With only one groupable
@@ -96,7 +96,7 @@ LIMITS = ["1", "3", "5", "10", "20", "25", "50", "100"]
 # THE GENERALIZATION TEST.
 # These (table, column) pairs NEVER appear in a GROUP BY during training.
 # The columns themselves do appear elsewhere (SELECT, WHERE), so they have
-# embeddings — the model just never saw them grouped.
+# embeddings. The model just never saw them grouped.
 #
 # At eval we prompt "SELECT channel , COUNT ( * ) FROM orders GROUP BY" and ask:
 # does it say `channel`? If yes, it learned the RULE, not the pairs.
@@ -104,7 +104,7 @@ HELD_OUT_GROUPBY = [("orders", "channel"), ("sales", "product"), ("customers", "
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# §2  DATA — we generate every training example from a grammar we control.
+# §2  DATA: we generate every training example from a grammar we control.
 #
 # Why generated and not scraped:
 #   - no licensing questions
@@ -203,7 +203,7 @@ def load_queries():
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# §3  TOKENIZER — text becomes integers. That is the whole job.
+# §3  TOKENIZER: text becomes integers. That is the whole job.
 #
 # Word-level, because SQL is already emitted space-separated. ~110 tokens total,
 # which is the point: a vocabulary this small means we can print the ENTIRE
@@ -232,7 +232,7 @@ class Tokenizer:
 
 
 def build_corpus(queries, tok):
-    """One long stream of token ids: <s> q1 ; <s> q2 ; ... — trained on windows."""
+    """One long stream of token ids: <s> q1 ; <s> q2 ; ... trained on windows."""
     ids = []
     bos = tok.stoi[BOS]
     for q in queries:
@@ -242,7 +242,7 @@ def build_corpus(queries, tok):
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# §4  MODEL — a decoder-only transformer. This is the part people pretend
+# §4  MODEL: a decoder-only transformer. This is the part people pretend
 #     to understand. It is about 90 lines.
 # ─────────────────────────────────────────────────────────────────────────────
 
@@ -267,13 +267,13 @@ SIZES = {
     # (~125K) but ONE layer instead of two. nano -> micro improved depth AND
     # width at once; this separates them.
     #
-    # RESULT: flat scores 99.4% GROUP BY agreement — identical to micro.
+    # RESULT: flat scores 100.0% GROUP BY agreement, identical to micro.
     # The hypothesis that this dependency needs two layers to compose is
     # WRONG for this task. At matched parameters, depth buys nothing; the
     # nano -> micro jump was capacity. One head can attend from "after
     # GROUP BY" to "after SELECT" using position and syntax alone, with no
     # previous-token head to compose with. (Copying arbitrary *novel* bigrams
-    # — true induction — is a harder job and is the case that needs 2 layers.)
+    # (true induction) is a harder job and is the case that needs 2 layers.)
     "flat":  dict(n_layer=1, n_head=4, n_embd=88),
 }
 
@@ -403,7 +403,7 @@ class TinyGPT(nn.Module):
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# §5  BIGRAM BASELINE — "what token usually follows this one", no attention.
+# §5  BIGRAM BASELINE: "what token usually follows this one", no attention.
 #     Its job is to be bad. A number is only meaningful next to a baseline.
 # ─────────────────────────────────────────────────────────────────────────────
 
@@ -428,7 +428,7 @@ class Bigram:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# §6  TRAIN — sample random windows, predict the next token, backpropagate.
+# §6  TRAIN: sample random windows, predict the next token, backpropagate.
 # ─────────────────────────────────────────────────────────────────────────────
 
 def get_batch(data, block_size, batch_size, device):
@@ -526,7 +526,7 @@ def sample_queries(model, tok, n=10, temperature=0.8, top_k=None, device="cpu"):
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# §8  EXPLAIN — open the black box. This is the teaching payload.
+# §8  EXPLAIN: open the black box. This is the teaching payload.
 # ─────────────────────────────────────────────────────────────────────────────
 
 def bar(p, width=28):
@@ -538,7 +538,7 @@ def explain(model, tok, device="cpu"):
     ids = [tok.stoi[BOS]] + tok.encode(prompt)
 
     print("\n" + "=" * 68)
-    print("1. VOCABULARY — the model's entire universe")
+    print("1. VOCABULARY: the model's entire universe")
     print("=" * 68)
     print(f"vocab size : {len(tok)} tokens")
     print(f"sample     : {', '.join(tok.itos[:14])} ...")
@@ -548,14 +548,14 @@ def explain(model, tok, device="cpu"):
               f"(L{model.cfg.n_layer} H{model.cfg.n_head} E{model.cfg.n_embd})")
 
     print("\n" + "=" * 68)
-    print("2. TOKENS — text is not words to a model, it is integers")
+    print("2. TOKENS: text is not words to a model, it is integers")
     print("=" * 68)
     print(f"text   : {prompt}")
     print(f"tokens : {ids[1:]}")
     print(f"count  : {len(ids)} tokens (including <s>)")
 
     print("\n" + "=" * 68)
-    print("3. CAUSAL MASK — why it cannot see the future")
+    print("3. CAUSAL MASK: why it cannot see the future")
     print("=" * 68)
     k = min(8, len(ids))
     names = [tok.itos[i] for i in ids[:k]]
@@ -567,7 +567,7 @@ def explain(model, tok, device="cpu"):
     print("\n  1 = may attend   . = masked out (the future)")
 
     if model is None:
-        print("\n(no checkpoint — run --train for sections 4 and 5)\n")
+        print("\n(no checkpoint found, run --train for sections 4 and 5)\n")
         return
 
     x = torch.tensor([ids], dtype=torch.long, device=device)
@@ -578,14 +578,14 @@ def explain(model, tok, device="cpu"):
     SAVE_ATTN = False
 
     print("\n" + "=" * 68)
-    print("4. THE FULL DISTRIBUTION — the model outputs probabilities, not answers")
+    print("4. THE FULL DISTRIBUTION: the model outputs probabilities, not answers")
     print("=" * 68)
     print("Same model, same softmax, two positions. Confidence is not a")
-    print("property of the model — it is a property of the context.\n")
+    print("property of the model, it is a property of the context.\n")
 
     for label, ctx in [
-        ("CONSTRAINED — only one column can legally follow", prompt),
-        ("OPEN — any table column could come next", "SELECT"),
+        ("CONSTRAINED: only one column can legally follow", prompt),
+        ("OPEN: any table column could come next", "SELECT"),
     ]:
         cids = torch.tensor([[tok.stoi[BOS]] + tok.encode(ctx)],
                             dtype=torch.long, device=device)
@@ -600,7 +600,7 @@ def explain(model, tok, device="cpu"):
             print(f"    {tok.itos[i]:<12} {p:6.3f}  {bar(p)}")
         print(f"    {'(other ' + str(len(tok) - 6) + ')':<12} "
               f"{1 - top.values.sum().item():6.3f}")
-        print("    temperature reshapes this distribution — nothing else:")
+        print("    temperature reshapes this distribution, nothing else:")
         for t in (0.2, 1.0, 2.0):
             pt = F.softmax(row / t, dim=-1)
             tt = torch.topk(pt, 3)
@@ -610,7 +610,7 @@ def explain(model, tok, device="cpu"):
         print()
 
     print("\n" + "=" * 68)
-    print("5. ATTENTION — what the last token actually looked at")
+    print("5. ATTENTION: what the last token actually looked at")
     print("=" * 68)
     print(f"query: {prompt}")
     print("position of the final token: predicting the GROUP BY column\n")

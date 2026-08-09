@@ -22,7 +22,7 @@ No pretrained weights. No `transformers` model classes. No API keys. The full ar
 ~200 readable lines of PyTorch.
 
 This model exists to be **understood**, not deployed. Its vocabulary is 155 tokens, which is the
-point — small enough that you can print the *entire* probability distribution at every generation
+point: small enough that you can print the *entire* probability distribution at every generation
 step, something no frontier model demo can do.
 
 - **Code, evaluation harness and write-up:** https://github.com/USERNAME/tiny-sql-gpt
@@ -46,7 +46,7 @@ print(model.generate())
 
 print(model.generate(prompt="SELECT region ,"))
 
-# The whole distribution — all 155 tokens, not a top-k truncation
+# The whole distribution, all 155 tokens, not a top-k truncation
 for token, p in model.next_token_probs(
         "SELECT region , SUM ( qty ) FROM sales GROUP BY", top=5):
     print(f"{token:<12} {p:.3f}")
@@ -60,7 +60,7 @@ for token, p in model.next_token_probs(
 ## What it does
 
 Generates SQL over a fixed three-table schema (`sales`, `customers`, `orders`) using 14 query
-shapes — `SELECT`, `WHERE`, `AND`, `GROUP BY`, `ORDER BY`, `LIMIT`, and the aggregates
+shapes: `SELECT`, `WHERE`, `AND`, `GROUP BY`, `ORDER BY`, `LIMIT`, and the aggregates
 `COUNT`/`SUM`/`AVG`/`MAX`/`MIN`.
 
 It is **not** a text-to-SQL model. It does not take a natural-language question. It generates
@@ -68,7 +68,7 @@ SQL unconditionally, or continues a SQL prefix you give it.
 
 ## Results
 
-500 generated queries, executed against a real SQLite database. Seeded — you get these exact
+500 generated queries, executed against a real SQLite database. Seeded, so you get these exact
 numbers.
 
 | metric | Tiny SQL GPT | bigram baseline |
@@ -76,7 +76,7 @@ numbers.
 | executes | **100.0%** | 4.4% |
 | `GROUP BY` agrees with `SELECT` | **100.0%** | 3.4% |
 | novel (not in training set) | 13.4% | 98.6% |
-| validation loss | 0.663 | — |
+| validation loss | 0.663 | n/a |
 
 100% is a real measurement, but read it against the task: 14 query shapes, 3 tables, 155 tokens.
 A model that saturates *this* is proof the training loop works, not a text-to-SQL system.
@@ -92,7 +92,7 @@ Same architecture and data at four sizes, all trained on one laptop:
 | **tiny** (this model) | **841,216** | **100.0%** | **100.0%** |
 | small | 4,834,816 | 100.0% | 100.0% |
 
-Syntax is nearly free — 24K parameters writes SQL that runs. The long-range dependency costs ~5x
+Syntax is nearly free: 24K parameters writes SQL that runs. The long-range dependency costs ~5x
 more, and appears as a phase transition between 24K and 125K. Above that, nothing improves: all
 four converge to ~0.66 validation loss, which is the entropy of the data generator, not a limit
 of the models.
@@ -103,13 +103,13 @@ of the models.
 
 The training data contains a deliberately planted long-range dependency: **the column after
 `GROUP BY` is always the column that appeared first in `SELECT`**, roughly 8 tokens earlier.
-Getting it right requires looking back — which is what attention is for.
+Getting it right requires looking back, which is what attention is for.
 
 **An attention head learned it.** Probing all 16 heads, layer 1 head 1 places **92.5% of its
 attention** on the `SELECT` column, 11.1x above uniform. Nobody designed or labelled that head.
 
 **And you can watch it hallucinate.** Three `(table, column)` pairs were held out from the
-`GROUP BY` position during training — the columns appear elsewhere, just never there. The model
+`GROUP BY` position during training. The columns appear elsewhere, just never there. The model
 gets **0 out of 3**, confidently substituting a familiar column instead:
 
 ```
@@ -117,7 +117,7 @@ asked for:   ... GROUP BY  ->  "channel"    (never seen in this position)
 it answered: ... GROUP BY  ->  "carrier"    (familiar, confident, wrong)
 ```
 
-A control prompt shows the copy circuit *is* firing (2.6x–13.9x lift) — it simply loses to a prior
+A control prompt shows the copy circuit *is* firing (2.6x to 13.9x lift), it simply loses to a prior
 against tokens never seen in that slot. **Attention identifies the right source token; the output
 prior overrules it.** That is hallucination, in a model small enough to point at the exact cause.
 
@@ -134,7 +134,7 @@ prior overrules it.** That is hallucination, in a model small enough to point at
 | steps | 3,000 · batch 64 · ~5 minutes on a laptop CPU |
 | final loss | train 0.657 · val 0.663 |
 
-Training data is **generated, not scraped** — from a grammar in the repo. No licensing questions,
+Training data is **generated, not scraped**, from a grammar in the repo. No licensing questions,
 and a learner can read the entire source of the training set.
 
 ## Limitations
@@ -142,7 +142,7 @@ and a learner can read the entire source of the training set.
 - Not text-to-SQL. No natural-language input.
 - One fixed three-table schema. It knows no other tables or columns.
 - 64-token context. Longer queries are truncated.
-- Does not generalize to column names it never saw in a given syntactic position (see above —
+- Does not generalize to column names it never saw in a given syntactic position (see above,
   that failure is the point, and it is measured rather than hidden).
 - Generated SQL is syntactically valid, not semantically meaningful. It will happily write
   `WHERE age > 1500`.

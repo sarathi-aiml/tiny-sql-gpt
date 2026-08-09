@@ -6,7 +6,7 @@
 No pretrained weights. No HuggingFace model classes. No API keys. ~700 lines of Python you can read
 in one sitting.
 
-> **New to what's inside a language model?** Start with **[EXPLAIN.md](EXPLAIN.md)** — the same
+> **New to what's inside a language model?** Start with **[EXPLAIN.md](EXPLAIN.md)**, the same
 > project with no maths and no jargon, in five minutes. This page is the detailed version.
 
 ```
@@ -18,10 +18,98 @@ SELECT status , SUM ( total ) FROM orders WHERE status = 'backorder' GROUP BY st
 
 ---
 
+## How it works, in five steps
+
+Each step is one section of `tiny_gpt.py` and one command. Nothing happens off-screen.
+
+```
+ 1  BUILD THE CORPUS                            tiny_gpt.py §2
+    python tiny_gpt.py --data
+
+    A hand-written grammar emits 100,000 SQL statements across 14 query
+    shapes. Synthetic and seeded, so the corpus is reproducible and every
+    pattern in it is known. Three (table, column) pairs are withheld from the
+    GROUP BY position as a held-out generalization probe.
+    out:  16,941 unique statements, 1.3M tokens, 90/10 train/val split
+
+
+ 2  TOKENIZE: TEXT -> TOKEN IDS -> VECTORS      tiny_gpt.py §3
+
+    Word-level tokenizer. Keywords, identifiers, literals and punctuation each
+    map to one integer index in a 155-entry vocabulary.
+
+      "SELECT region , SUM"   ->   [147, 99, 131, 96]
+
+    Those integers are not features, they are row indices. The token embedding
+    matrix W_e (155 x 128) is looked up per ID to produce a dense vector in
+    R^128, and a learned positional embedding W_p (64 x 128) is added so the
+    model encodes both identity and position:
+
+      x = W_e[ids] + W_p[0..T)            x : [B, T, 128]
+
+
+ 3  THE MODEL: DECODER-ONLY TRANSFORMER         tiny_gpt.py §4
+
+    d_model 128 | 4 heads | head_dim 32 | 4 blocks | context 64 | pre-LN
+    Written directly in PyTorch. No transformers library, no AutoModel,
+    no pretrained weights.
+
+      x : [B, T, 128]
+        └─► Block x4
+              ├─ LayerNorm
+              │    └─ causal self-attention
+              │         q,k,v = x @ W_qkv          q,k,v : [B, 4, T, 32]
+              │         A     = softmax( q k^T / sqrt(32) + mask )
+              │         out   = (A @ v) @ W_o          A : [B, 4, T, T]
+              │    └─ residual add
+              └─ LayerNorm
+                   └─ MLP  128 -> 512 -> 128, GELU
+                   └─ residual add
+        └─► final LayerNorm
+        └─► unembedding W_u (128 x 155)     logits : [B, T, 155]
+
+    The mask is strictly lower-triangular, so position t attends only to 0..t.
+    That is what makes this autoregressive rather than bidirectional.
+    out:  841,216 parameters, fp32
+
+
+ 4  TRAIN: NEXT-TOKEN PREDICTION                tiny_gpt.py §6
+    python tiny_gpt.py --train
+
+    Objective is cross-entropy between the logits at position t and the token
+    at t+1, evaluated at every position in parallel (teacher forcing):
+
+      loss = cross_entropy( logits.view(-1, 155), targets.view(-1) )
+
+    AdamW (lr 1e-3, weight decay 0.01), cosine decay, grad-norm clip 1.0,
+    batches of 64 sequences x 64 tokens sampled as random windows.
+    out:  loss 4.62 -> 0.663 val, ~5 min on a laptop CPU, no GPU
+
+
+ 5  DECODE AND EVALUATE BY EXECUTION            inference.py / evaluate.py
+    python evaluate.py --eval
+
+    Autoregressive decoding: forward pass, take logits[:, -1], scale by
+    temperature, optional top-k truncation, softmax to a distribution, sample,
+    append, repeat until the ';' token. No KV cache; at 64 tokens of context
+    the recompute is cheaper than the code to avoid it.
+
+    Scoring is execution-based, not string similarity. Every generated
+    statement is run against a live SQLite database and graded on whether it
+    executes, against a bigram baseline for reference.
+    out:  the numbers below
+```
+
+Steps 1 to 4 all live in one file, `tiny_gpt.py`, in that order. Read it top to bottom and you
+follow a SQL statement through tokenization, embedding, attention, backprop, and back out as
+generated text.
+
+---
+
 ## Results
 
 Every number below is produced by `python evaluate.py --eval`, which generates 500 queries and
-runs them against a real SQLite database. Nothing is graded by eye, and the run is seeded — you
+runs them against a real SQLite database. Nothing is graded by eye, and the run is seeded, so you
 will get these exact numbers.
 
 | metric | TinyGPT (841K params) | bigram baseline |
@@ -30,11 +118,11 @@ will get these exact numbers.
 | **executes** | **100.0%** | 4.4% |
 | `GROUP BY` agrees with `SELECT` | **100.0%** | 3.4% |
 | novel (not in training set) | 13.4% | 98.6% |
-| validation loss | 0.663 | — |
+| validation loss | 0.663 | n/a |
 
 The bigram baseline is there on purpose. A number without a baseline is decoration.
 
-100% is a real measurement, not a rounding flourish — but read it against the task. The grammar has
+100% is a real measurement, not a rounding flourish, but read it against the task. The grammar has
 14 query shapes over a 3-table schema and a 155-token vocabulary. A model that saturates *this* is
 not a text-to-SQL system; it's proof that the training loop works. The interesting number is the
 13.4% novelty, and the failure in the next section.
@@ -44,23 +132,23 @@ not a text-to-SQL system; it's proof that the training loop works. The interesti
 ## Where the model actually is
 
 Fair question, and the one this repo gets asked most. **The model is one file: `tiny_gpt.py`.**
-Every other Python file in the repo is scaffolding around it — none of them contain a model.
+Every other Python file in the repo is scaffolding around it. None of them contain a model.
 
 | file | contains the model? | what it's for |
 |---|---|---|
-| **`tiny_gpt.py`** | **yes — all of it** | schema, data generation, tokenizer, model, training loop, sampling, `--explain` |
+| **`tiny_gpt.py`** | **yes, all of it** | schema, data generation, tokenizer, model, training loop, sampling, `--explain` |
 | `evaluate.py` | no | runs generated SQL against SQLite, scaling curve, attention probe |
 | `inference.py` | no | loads a checkpoint and generates. Imports the model from `tiny_gpt.py` |
 | `test_tiny_gpt.py` | no | 11 tests |
 | `push_to_hub.py` | no | packages and uploads to Hugging Face |
 
-Inside `tiny_gpt.py`, the model itself is §4 — roughly 120 lines covering `CausalSelfAttention`,
+Inside `tiny_gpt.py`, the model itself is §4, roughly 120 lines covering `CausalSelfAttention`,
 `Block`, and `TinyGPT`. Everything imported is `torch`, `torch.nn`, and the standard library.
 There is no `transformers`, no `AutoModel`, no pretrained anything.
 
 ### How it was actually trained
 
-Exactly these commands, in this order, on a MacBook CPU — no GPU, no cloud:
+Exactly these commands, in this order, on a MacBook CPU, with no GPU and no cloud:
 
 ```bash
 python tiny_gpt.py --data                        # 100,000 queries      ~2 sec
@@ -71,8 +159,8 @@ python evaluate.py --scaling --steps 3000        # all four sizes       ~40 min
 ```
 
 Training is `torch.optim.AdamW` over random 64-token windows of the corpus, cross-entropy on the
-next token, 3,000 steps at batch 64. Loss went `4.62 → 0.66`. That is the entire training story —
-the loop is ~25 lines in §6 and you can read all of it.
+next token, 3,000 steps at batch 64. Loss went `4.62 → 0.66`. That is the entire training story.
+The loop is ~25 lines in §6 and you can read all of it.
 
 ---
 
@@ -80,10 +168,10 @@ the loop is ~25 lines in §6 and you can read all of it.
 
 ### 1. An executable metric
 
-Generated SQL is run against a real database. It works or it doesn't — no human judgement, no
+Generated SQL is run against a real database. It works or it doesn't. No human judgement, no
 vibes. This is the difference between "look, it makes plausible text" and a measurement.
 
-### 2. A scaling curve — and it does not say what you'd expect
+### 2. A scaling curve, and it does not say what you'd expect
 
 The same architecture at four sizes, same data, same code, all trained on one laptop.
 
@@ -98,20 +186,20 @@ The same architecture at four sizes, same data, same code, all trained on one la
 
 Three things fall out of this, and none of them is "bigger is better":
 
-**Syntax is nearly free.** `nano` — 24,736 parameters, one layer — writes SQL that executes 99.6%
+**Syntax is nearly free.** `nano`, at 24,736 parameters and one layer, writes SQL that executes 99.6%
 of the time. Surface fluency is the cheapest thing a language model learns.
 
 **The long-range dependency is what costs parameters.** That same `nano` gets `GROUP BY` agreement
-right 41.4% of the time — barely above the ~33% you'd get by picking a groupable column at random.
+right 41.4% of the time, barely above the ~33% you'd get by picking a groupable column at random.
 It learned what SQL *looks like* and almost nothing about the rule. Between 24K and 124K parameters
 it goes to 100%. That is a phase transition you can watch happen on a laptop.
 
 **Then it stops.** `small` has 200x the parameters of `nano` and is very slightly *worse* than
 `tiny` on validation loss. All four models converge to ~0.66, because ~0.66 is the entropy of the
-data generator — it picks tables, columns and values at random, and no model can predict a coin
+data generator. It picks tables, columns and values at random, and no model can predict a coin
 flip. That floor is a property of the data, not a limitation of the models.
 
-The useful question was never "is bigger better." It's **where does the curve bend for my task** —
+The useful question was never "is bigger better." It's **where does the curve bend for my task**,
 because past that point, more parameters buy nothing. That's measurable in an afternoon.
 
 #### An ablation, and a hypothesis that died
@@ -120,7 +208,7 @@ because past that point, more parameters buy nothing. That's measurable in an af
 was depth: copying a token from earlier in the sequence sounds like it needs one attention operation
 to locate it and a second to move it.
 
-So I trained `flat` — **one layer**, widened to match `micro`'s parameter count:
+So I trained `flat`: **one layer**, widened to match `micro`'s parameter count:
 
 | model | layers | params | `GROUP BY` agrees |
 |---|---:|---:|---:|
@@ -128,7 +216,7 @@ So I trained `flat` — **one layer**, widened to match `micro`'s parameter coun
 | **flat** | **1** | **127,160** | **100.0%** |
 | micro | 2 | 124,032 | 100.0% |
 
-**Identical.** At matched parameters, depth bought nothing — the hypothesis was wrong, and the
+**Identical.** At matched parameters, depth bought nothing. The hypothesis was wrong, and the
 nano→micro jump was capacity all along. Probing `flat`'s single layer finds head L0H1 at 55% on the
 `SELECT` column, 6.6x uniform. One layer is enough.
 
@@ -156,11 +244,11 @@ query: SELECT region , SUM ( qty ) FROM sales GROUP BY
   ...
   L3H1   0.000
 
-  best: layer 1, head 1 — 92.5% of its attention lands on the SELECT column
+  best: layer 1, head 1, 92.5% of its attention lands on the SELECT column
   uniform baseline would be 8.3%  (11.1x)
 ```
 
-**Layer 1, head 1 learned `GROUP BY` agreement.** Not a textbook diagram — an actual head in an
+**Layer 1, head 1 learned `GROUP BY` agreement.** Not a textbook diagram, but an actual head in an
 actual model, found on a laptop, reproducible with one command.
 
 ![attention](figures/attention-tiny.png)
@@ -169,7 +257,7 @@ actual model, found on a laptop, reproducible with one command.
 
 ## The honest negative
 
-Three `(table, column)` pairs were **never** grouped during training — `orders.channel`,
+Three `(table, column)` pairs were **never** grouped during training: `orders.channel`,
 `sales.product`, `customers.tier`. The columns appear everywhere else, just never after `GROUP BY`.
 So: did the model learn the *rule*, or the *pairs*?
 
@@ -181,14 +269,14 @@ So: did the model learn the *rule*, or the *pairs*?
   [MISS] SELECT tier    ... FROM customers GROUP BY -> plan
          p(tier)=0.0039    rank 4/155  |  control p=0.000280  ->  copy lift  13.9x
 
-  0/3 correct on unseen pairs — mean copy lift 6.4x
+  0/3 correct on unseen pairs, mean copy lift 6.4x
 ```
 
 **0 out of 3.** But look closer before calling it a failure.
 
 *Copy lift* compares `p(col | SELECT col ... GROUP BY)` against a control prompt with a different
 `SELECT` column. Naming the column in `SELECT` raises its `GROUP BY` probability by **2.6x to
-13.9x** — so the copy circuit found by L1H1 *is* firing. It just loses to a blanket prior against
+13.9x**, so the copy circuit found by L1H1 *is* firing. It just loses to a blanket prior against
 tokens that never appeared in that slot during training.
 
 That is the whole story of hallucination, at 841K parameters:
@@ -196,7 +284,7 @@ That is the whole story of hallucination, at 841K parameters:
 > **Attention identifies the right source token. The output prior overrules it.**
 
 The model is 100% correct on columns it has seen grouped, and confidently wrong on ones it hasn't.
-It never learned a rule — it learned a very good lookup table. Scaling this up doesn't change the
+It never learned a rule. It learned a very good lookup table. Scaling this up doesn't change the
 mechanism; it just makes the lookup table bigger.
 
 ---
@@ -224,7 +312,7 @@ python test_tiny_gpt.py                # 11 tests, no framework
 
 Trained checkpoints for `nano`, `micro`, `flat` and `tiny` are committed, so `--generate`,
 `--explain`, `--eval`, `--attention` and the ablation all work without training anything.
-`small` (19 MB) is not committed — `--scaling` reuses the checkpoints it finds and trains only
+`small` (19 MB) is not committed. `--scaling` reuses the checkpoints it finds and trains only
 `small`, about 30 minutes on a laptop CPU. Everything else in `--scaling` is instant.
 
 Sizes: `--size nano | micro | flat | tiny | small`.
@@ -233,14 +321,14 @@ Sizes: `--size nano | micro | flat | tiny | small`.
 
 ## Open the black box
 
-`python tiny_gpt.py --explain` prints the internals on real data — vocabulary, token IDs, the
+`python tiny_gpt.py --explain` prints the internals on real data: vocabulary, token IDs, the
 causal mask, the **complete** probability distribution, and per-head attention.
 
 The vocabulary is 155 tokens, which is the point: small enough to print the *entire* softmax.
 No frontier model demo can do this.
 
 ```
-3. CAUSAL MASK — why it cannot see the future
+3. CAUSAL MASK: why it cannot see the future
 
           <s> SELEC regio     ,   SUM     (   qty     )
     <s>     1     .     .     .     .     .     .     .
@@ -252,20 +340,20 @@ No frontier model demo can do this.
     qty     1     1     1     1     1     1     1     .
       )     1     1     1     1     1     1     1     1
 
-4. THE FULL DISTRIBUTION — the model outputs probabilities, not answers
+4. THE FULL DISTRIBUTION: the model outputs probabilities, not answers
 
 Same model, same softmax, two positions. Confidence is not a property of the
-model — it is a property of the context.
+model, it is a property of the context.
 
   context: ...SELECT region , SUM ( qty ) FROM sales GROUP BY
-  CONSTRAINED — only one column can legally follow
+  CONSTRAINED: only one column can legally follow
     region        0.995  ████████████████████████████
     segment       0.002
     quarter       0.001
     (other 149)   0.001
 
   context: ...SELECT
-  OPEN — any table column could come next
+  OPEN: any table column could come next
     *             0.070  ██
     COUNT         0.069  ██
     status        0.064  ██
@@ -380,9 +468,6 @@ $ python test_tiny_gpt.py
 
 ## What it is
 
-A complete, honest, end-to-end path from a dataset you can read to a token you can explain —
+A complete, honest, end-to-end path from a dataset you can read to a token you can explain,
 with a metric, a baseline, and a negative result that wasn't cherry-picked away.
 
----
-
-*Built from `PLAN.md`. Seed 1337 throughout. Everything reproducible from `python tiny_gpt.py --data`.*
