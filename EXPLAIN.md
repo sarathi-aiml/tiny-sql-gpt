@@ -128,11 +128,18 @@ back, and find exactly *where* inside it that happens.
 
  ③  I FOUND THE ACTUAL WIRE THAT DOES THE LOOKING BACK
 
-     The model has 16 "attention heads". I checked all 16.
-     Exactly one of them stares straight back at the SELECT column.
+     In the SMALLEST model that can do the job, I checked every head.
+     One of them stares straight back at the SELECT column: 58.7% of its
+     attention, against 8.3% if it were looking nowhere in particular.
 
      ↳ One specific part of the model learned one specific rule.
        Nobody programmed it. It fell out of guessing the next word.
+
+     But in the BIGGER model, the same rule is obeyed 100% of the time and
+     no single head is doing it. The work is spread across many.
+
+     ↳ Bigger models are not harder to read by accident. The extra room
+       lets the computation spread out, and the tidy picture disappears.
 ```
 
 ---
@@ -146,7 +153,7 @@ data, they just never appear right after `GROUP BY`. Then I asked for them:
 
 ```
    asked for:   ... GROUP BY  →  "channel"     (never seen in this position)
-   it answered: ... GROUP BY  →  "carrier"     (familiar, confident, wrong)
+   it answered: ... GROUP BY  →  "status"      (familiar, confident, wrong)
 ```
 
 Every time. Confidently.

@@ -1,0 +1,5 @@
+torch
+gradio
+huggingface_hub
+safetensors
+matplotlib

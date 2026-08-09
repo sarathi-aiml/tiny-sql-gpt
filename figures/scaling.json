@@ -2,15 +2,15 @@
   {
     "name": "nano",
     "params": 24736,
-    "val_loss": 0.6955187320709229,
-    "executes_pct": 99.6,
-    "groupby_agrees_pct": 41.37931034482759,
+    "val_loss": 0.6974422335624695,
+    "executes_pct": 99.2,
+    "groupby_agrees_pct": 36.55172413793103,
     "heldout_correct": 0
   },
   {
     "name": "micro",
     "params": 124032,
-    "val_loss": 0.6699299812316895,
+    "val_loss": 0.6679407358169556,
     "executes_pct": 99.8,
     "groupby_agrees_pct": 100.0,
     "heldout_correct": 0
@@ -18,7 +18,7 @@
   {
     "name": "tiny",
     "params": 841216,
-    "val_loss": 0.6625377535820007,
+    "val_loss": 0.6621281504631042,
     "executes_pct": 100.0,
     "groupby_agrees_pct": 100.0,
     "heldout_correct": 0
@@ -26,7 +26,7 @@
   {
     "name": "small",
     "params": 4834816,
-    "val_loss": 0.6650308966636658,
+    "val_loss": 0.6614265441894531,
     "executes_pct": 100.0,
     "groupby_agrees_pct": 100.0,
     "heldout_correct": 0

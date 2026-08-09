@@ -440,6 +440,15 @@ def get_batch(data, block_size, batch_size, device):
 
 @torch.no_grad()
 def estimate_loss(model, splits, cfg, batch_size, device, iters=50):
+    """Measure loss without disturbing the training run.
+
+    get_batch() draws from the global RNG, so sampling evaluation batches
+    would otherwise shift every subsequent training batch. That would make
+    `log_every` silently change the trained weights: the same config and seed
+    logged at a different cadence would produce a different model. Save the
+    RNG state, measure, put it back.
+    """
+    rng_state = torch.get_rng_state()
     model.eval()
     out = {}
     for name, data in splits.items():
@@ -450,6 +459,7 @@ def estimate_loss(model, splits, cfg, batch_size, device, iters=50):
             losses[k] = loss.item()
         out[name] = losses.mean().item()
     model.train()
+    torch.set_rng_state(rng_state)
     return out
 
 

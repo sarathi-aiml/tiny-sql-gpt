@@ -14,9 +14,9 @@ in one sitting.
 
 ```
 $ python tiny_gpt.py --generate 3
-SELECT segment , COUNT ( * ) FROM sales GROUP BY segment ;
-SELECT plan , MIN ( age ) FROM customers WHERE tier = 'platinum' GROUP BY plan ;
-SELECT status , SUM ( total ) FROM orders WHERE status = 'backorder' GROUP BY status ;
+SELECT MAX ( items ) FROM orders ;
+SELECT quarter FROM sales WHERE product = 'gizmo' ;
+SELECT city , MIN ( age ) FROM customers WHERE plan = 'annual' GROUP BY city ;
 ```
 
 ---
@@ -86,7 +86,7 @@ Each step is one section of `tiny_gpt.py` and one command. Nothing happens off-s
 
     AdamW (lr 1e-3, weight decay 0.01), cosine decay, grad-norm clip 1.0,
     batches of 64 sequences x 64 tokens sampled as random windows.
-    out:  loss 4.62 -> 0.663 val, ~5 min on a laptop CPU, no GPU
+    out:  loss 4.62 -> 0.662 val, ~5 min on a laptop CPU, no GPU
 
 
  5  DECODE AND EVALUATE BY EXECUTION            inference.py / evaluate.py
@@ -120,15 +120,15 @@ will get these exact numbers.
 | parses | **100.0%** | 4.4% |
 | **executes** | **100.0%** | 4.4% |
 | `GROUP BY` agrees with `SELECT` | **100.0%** | 3.4% |
-| novel (not in training set) | 13.4% | 98.6% |
-| validation loss | 0.663 | n/a |
+| novel (not in training set) | 16.6% | 98.6% |
+| validation loss | 0.662 | n/a |
 
 The bigram baseline is there on purpose. A number without a baseline is decoration.
 
 100% is a real measurement, not a rounding flourish, but read it against the task. The grammar has
 14 query shapes over a 3-table schema and a 155-token vocabulary. A model that saturates *this* is
 not a text-to-SQL system; it's proof that the training loop works. The interesting number is the
-13.4% novelty, and the failure in the next section.
+16.6% novelty, and the failure in the next section.
 
 ---
 
@@ -142,7 +142,7 @@ Every other Python file in the repo is scaffolding around it. None of them conta
 | **`tiny_gpt.py`** | **yes, all of it** | schema, data generation, tokenizer, model, training loop, sampling, `--explain` |
 | `evaluate.py` | no | runs generated SQL against SQLite, scaling curve, attention probe |
 | `inference.py` | no | loads a checkpoint and generates. Imports the model from `tiny_gpt.py` |
-| `test_tiny_gpt.py` | no | 11 tests |
+| `test_tiny_gpt.py` | no | 12 tests |
 | `push_to_hub.py` | no | packages and uploads to Hugging Face |
 
 Inside `tiny_gpt.py`, the model itself is §4, roughly 120 lines covering `CausalSelfAttention`,
@@ -180,27 +180,28 @@ The same architecture at four sizes, same data, same code, all trained on one la
 
 | model | params | val loss | executes | **`GROUP BY` agrees** |
 |---|---:|---:|---:|---:|
-| nano | 24,736 | 0.696 | 99.6% | **41.4%** |
-| micro | 124,032 | 0.670 | 99.8% | **100.0%** |
-| tiny | 841,216 | 0.663 | 100.0% | 100.0% |
-| small | 4,834,816 | 0.665 | 100.0% | 100.0% |
+| nano | 24,736 | 0.697 | 99.2% | **36.6%** |
+| micro | 124,032 | 0.668 | 99.8% | **100.0%** |
+| tiny | 841,216 | 0.662 | 100.0% | 100.0% |
+| small | 4,834,816 | 0.661 | 100.0% | 100.0% |
 
 ![scaling](figures/scaling.png)
 
 Three things fall out of this, and none of them is "bigger is better":
 
-**Syntax is nearly free.** `nano`, at 24,736 parameters and one layer, writes SQL that executes 99.6%
+**Syntax is nearly free.** `nano`, at 24,736 parameters and one layer, writes SQL that executes 99.2%
 of the time. Surface fluency is the cheapest thing a language model learns.
 
 **The long-range dependency is what costs parameters.** That same `nano` gets `GROUP BY` agreement
-right 41.4% of the time, barely above the ~33% you'd get by picking a groupable column at random.
+right 36.6% of the time, which is essentially the ~33% you'd get by picking a groupable column at
+random.
 It learned what SQL *looks like* and almost nothing about the rule. Between 24K and 124K parameters
 it goes to 100%. That is a phase transition you can watch happen on a laptop.
 
-**Then it stops.** `small` has 200x the parameters of `nano` and is very slightly *worse* than
-`tiny` on validation loss. All four models converge to ~0.66, because ~0.66 is the entropy of the
-data generator. It picks tables, columns and values at random, and no model can predict a coin
-flip. That floor is a property of the data, not a limitation of the models.
+**Then it flattens.** Going from `micro` to `small` is 39x more parameters for 0.007 of validation
+loss and no change in either behavioural metric. All four converge to ~0.66 because ~0.66 is the
+entropy of the data generator: it picks tables, columns and values at random, and no model can
+predict a coin flip. That floor is a property of the data, not a limitation of the models.
 
 The useful question was never "is bigger better." It's **where does the curve bend for my task**,
 because past that point, more parameters buy nothing. That's measurable in an afternoon.
@@ -215,13 +216,12 @@ So I trained `flat`: **one layer**, widened to match `micro`'s parameter count:
 
 | model | layers | params | `GROUP BY` agrees |
 |---|---:|---:|---:|
-| nano | 1 | 24,736 | 41.4% |
-| **flat** | **1** | **127,160** | **100.0%** |
+| nano | 1 | 24,736 | 36.6% |
+| **flat** | **1** | **127,160** | **99.5%** |
 | micro | 2 | 124,032 | 100.0% |
 
-**Identical.** At matched parameters, depth bought nothing. The hypothesis was wrong, and the
-nano→micro jump was capacity all along. Probing `flat`'s single layer finds head L0H1 at 55% on the
-`SELECT` column, 6.6x uniform. One layer is enough.
+**99.5% against 100.0%.** At matched parameters, depth bought essentially nothing. The hypothesis
+was wrong, and the nano→micro jump was capacity all along. One layer is enough.
 
 In hindsight it's clear why: attending from "just after `GROUP BY`" to "just after `SELECT`" can be
 done from position and syntax alone. There's no previous-token head to compose with. Copying
@@ -229,32 +229,58 @@ arbitrary *novel* bigrams is the harder job, and that's the case that needs two 
 
 Reproduce with `python tiny_gpt.py --train --size flat` and `python evaluate.py --eval --size flat`.
 
-### 3. An interpretability finding
+### 3. An interpretability finding, and a caveat worth more than the finding
 
 The training data has a deliberate long-range dependency: the column after `GROUP BY` is always
 the column that appeared first in `SELECT`. Learning that requires looking back ~8 tokens.
 
-`python evaluate.py --attention` probes all 16 heads:
+`python evaluate.py --attention` scores every head on how much attention it pays to that column.
+Run it on the smallest model that can actually do the job, `flat`, one layer and 127K parameters:
 
 ```
 query: SELECT region , SUM ( qty ) FROM sales GROUP BY
-       does any head look back at 'region' when predicting the next token?
 
-  L1H1   0.925  █████████████████████████████████████
-  L1H3   0.899  ████████████████████████████████████
-  L1H0   0.534  █████████████████████
-  L2H1   0.154  ██████
+  L0H1   0.587  ███████████████████████
   ...
-  L3H1   0.000
-
-  best: layer 1, head 1, 92.5% of its attention lands on the SELECT column
-  uniform baseline would be 8.3%  (11.1x)
+  best: layer 0, head 1, 58.7% of its attention lands on the SELECT column
+  uniform baseline would be 8.3%  (7.0x)
 ```
 
-**Layer 1, head 1 learned `GROUP BY` agreement.** Not a textbook diagram, but an actual head in an
-actual model, found on a laptop, reproducible with one command.
+**One head, doing one job.** Nobody designed or labelled it. The bright cell on the `BY` row is the
+head reaching back to `region`, and the blank upper triangle is the causal mask:
 
-![attention](figures/attention-tiny.png)
+![attention](figures/attention-flat.png)
+
+Now run the same probe on `tiny`, 4 layers and 841K parameters, which gets `GROUP BY` agreement
+right **100%** of the time:
+
+```
+  L1H0   0.177  ███████
+  L3H2   0.122  █████
+  L1H1   0.071  ███
+  L0H1   0.070  ███
+  ...
+  best: layer 1, head 0, 17.7% of its attention
+  uniform baseline would be 8.3%  (2.1x)
+
+  VERDICT: no single head owns this dependency, it is distributed.
+```
+
+**Same behaviour. No legible circuit.** The bigger model is not worse at the task, it is worse at
+being read. The one-layer model has nowhere else to put the computation, so it is forced into a
+single head. The four-layer model smears it across heads and layers, and the tidy picture
+disappears.
+
+That is the real lesson, and it is inconvenient:
+
+> Interpretability is not a property of the behaviour. It is a property of the model that happens
+> to implement it. Scale does not just add capability, it dissolves the clean circuits you were
+> hoping to read.
+
+**A caveat on top of the caveat.** This is seed-sensitive. An earlier training run of `tiny` put a
+single head above 85% on this exact probe. The current seeded run does not reproduce that at all.
+Treat any single-head circuit claim in a small model with suspicion unless it replicates across
+seeds, including the ones in this README.
 
 ---
 
@@ -265,22 +291,22 @@ Three `(table, column)` pairs were **never** grouped during training: `orders.ch
 So: did the model learn the *rule*, or the *pairs*?
 
 ```
-  [MISS] SELECT channel ... FROM orders    GROUP BY -> carrier
-         p(channel)=0.0012  rank 6/155  |  control p=0.000452  ->  copy lift   2.7x
+  [MISS] SELECT channel ... FROM orders    GROUP BY -> status
+         p(channel)=0.0014  rank 4/155  |  control p=0.000368  ->  copy lift   3.8x
   [MISS] SELECT product ... FROM sales     GROUP BY -> segment
-         p(product)=0.0009  rank 8/155  |  control p=0.000352  ->  copy lift   2.6x
-  [MISS] SELECT tier    ... FROM customers GROUP BY -> plan
-         p(tier)=0.0039    rank 4/155  |  control p=0.000280  ->  copy lift  13.9x
+         p(product)=0.0026  rank 4/155  |  control p=0.000524  ->  copy lift   5.0x
+  [MISS] SELECT tier    ... FROM customers GROUP BY -> source
+         p(tier)=0.0041    rank 4/155  |  control p=0.000399  ->  copy lift  10.2x
 
-  0/3 correct on unseen pairs, mean copy lift 6.4x
+  0/3 correct on unseen pairs, mean copy lift 6.3x
 ```
 
 **0 out of 3.** But look closer before calling it a failure.
 
 *Copy lift* compares `p(col | SELECT col ... GROUP BY)` against a control prompt with a different
-`SELECT` column. Naming the column in `SELECT` raises its `GROUP BY` probability by **2.6x to
-13.9x**, so the copy circuit found by L1H1 *is* firing. It just loses to a blanket prior against
-tokens that never appeared in that slot during training.
+`SELECT` column. Naming the column in `SELECT` raises its `GROUP BY` probability by **3.8x to
+10.2x**, so the context *is* being used. It just loses to a blanket prior against tokens that
+never appeared in that slot during training.
 
 That is the whole story of hallucination, at 841K parameters:
 
@@ -310,7 +336,7 @@ python evaluate.py --attention         # probe all 16 heads
 python evaluate.py --scaling           # the full curve + chart
 python evaluate.py --plot              # re-render the chart from saved results
 
-python test_tiny_gpt.py                # 11 tests, no framework
+python test_tiny_gpt.py                # 12 tests, no framework
 ```
 
 Trained checkpoints for `nano`, `micro`, `flat` and `tiny` are committed, so `--generate`,
@@ -350,21 +376,21 @@ model, it is a property of the context.
 
   context: ...SELECT region , SUM ( qty ) FROM sales GROUP BY
   CONSTRAINED: only one column can legally follow
-    region        0.995  ████████████████████████████
-    segment       0.002
-    quarter       0.001
+    region        0.996  ████████████████████████████
+    segment       0.001
+    product       0.001
     (other 149)   0.001
 
   context: ...SELECT
   OPEN: any table column could come next
-    *             0.070  ██
-    COUNT         0.069  ██
-    status        0.064  ██
-    plan          0.064  ██
-    (other 149)   0.607
+    *             0.072  ██
+    COUNT         0.070  ██
+    region        0.064  ██
+    segment       0.064  ██
+    (other 149)   0.603
 ```
 
-Same model. 0.995 versus 0.070.
+Same model. 0.996 versus 0.072.
 
 ---
 
@@ -397,7 +423,7 @@ Same model. 0.995 versus 0.070.
                                   ▼
                         logits [B, T, 155]
                                   ▼
-                  cross_entropy(logits, next_token)  ──►  loss 0.661
+                  cross_entropy(logits, next_token)  ──►  loss 0.662
 ```
 
 Inside one attention head:
@@ -424,7 +450,7 @@ tiny_gpt.py        §1 schema  §2 data  §3 tokenizer  §4 model
                    §5 bigram  §6 train §7 generate   §8 explain  §9 cli
 inference.py       run the model. no training code, no eval harness.
 evaluate.py        executable eval · scaling curve · attention probe
-test_tiny_gpt.py   11 tests, plain asserts
+test_tiny_gpt.py   12 tests, plain asserts
 
 push_to_hub.py     package + publish to the Hugging Face Hub
 hf/MODEL_CARD.md   the model card template
@@ -451,13 +477,14 @@ $ python test_tiny_gpt.py
   ok  test_generation_produces_parseable_output
   ok  test_groupby_rule_detector
   ok  test_heldout_pairs_never_grouped_in_training   # the held-out pairs really are held out
+  ok  test_log_every_does_not_change_the_trained_model  # eval must not consume the training RNG
   ok  test_param_count_matches_hand_calc        # 841,216 against a hand-derived formula
   ok  test_shapes_match_the_diagram
   ok  test_sqlite_harness_grades_correctly
   ok  test_tokenizer_round_trips
   ok  test_training_reduces_loss
 
-11 passed
+12 passed
 ```
 
 ---

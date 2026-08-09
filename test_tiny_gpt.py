@@ -94,6 +94,26 @@ def test_training_reduces_loss():
     return model, tok
 
 
+def test_log_every_does_not_change_the_trained_model():
+    """Evaluation must not consume the training RNG stream.
+
+    estimate_loss() draws batches from the global RNG. Without saving and
+    restoring that state, logging more often shifts every later training
+    batch, so the same config and seed would train a different model at a
+    different log cadence. That silently breaks reproducibility.
+    """
+    rng = random.Random(11)
+    qs = [T.make_query(rng) for _ in range(2000)]
+    tok = T.Tokenizer(qs)
+    splits = T.make_splits(T.build_corpus(qs, tok))
+    mk = lambda: T.Config(vocab_size=len(tok), block_size=32, n_layer=2,
+                          n_head=2, n_embd=32)
+    a, _ = T.train(mk(), splits, steps=120, batch_size=16, log_every=40, quiet=True)
+    b, _ = T.train(mk(), splits, steps=120, batch_size=16, log_every=120, quiet=True)
+    for (k, va), vb in zip(a.state_dict().items(), b.state_dict().values()):
+        assert torch.allclose(va, vb), f"log_every changed the weights at {k}"
+
+
 def test_checkpoint_round_trips(tmp="/tmp/_tiny_sql_gpt_test.pt"):
     model, tok = test_training_reduces_loss()
     T.save_ckpt(model, tok, [], tmp)
