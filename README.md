@@ -331,8 +331,6 @@ python inference.py                    # write some SQL
 python inference.py --run              # write it AND execute it against SQLite
 python inference.py --probs "SELECT region , SUM ( qty ) FROM sales GROUP BY"
 
-python space/app.py                    # local Gradio demo in your browser
-
 python evaluate.py --eval              # the headline number
 python evaluate.py --attention         # probe all 16 heads
 python evaluate.py --scaling           # the full curve + chart
@@ -454,7 +452,6 @@ inference.py       run the model. no training code, no eval harness.
 evaluate.py        executable eval · scaling curve · attention probe
 test_tiny_gpt.py   12 tests, plain asserts
 
-space/app.py       Gradio demo: generate, execute, full softmax, all 16 heads
 push_to_hub.py     package + publish to the Hugging Face Hub
 hf/MODEL_CARD.md   the model card template
 

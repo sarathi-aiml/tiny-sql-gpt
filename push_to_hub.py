@@ -25,7 +25,6 @@ from inference import TinySQLGPT
 HERE = os.path.dirname(os.path.abspath(__file__))
 STAGE = os.path.join(HERE, "hf", "tiny-sql-gpt")
 TEMPLATE = os.path.join(HERE, "hf", "MODEL_CARD.md")
-SPACE = os.path.join(HERE, "space")
 
 # Uploaded so the Hub repo runs standalone. tiny_gpt.py carries the model
 # definition; inference.py is the loader/generator wrapper.
@@ -82,46 +81,15 @@ def stage(repo_id, ckpt, gh_slug=None):
     return files
 
 
-def push_space(repo_id, private=False, dry_run=False):
-    """Upload the Gradio demo in space/.
-
-    The Space pulls weights and model code from the model repo at startup, so
-    there is one source of truth and nothing here to keep in sync.
-    """
-    skip = ["__pycache__/*", "*.pyc", ".DS_Store"]
-    files = [f for f in sorted(os.listdir(SPACE))
-             if not f.startswith(".") and f != "__pycache__"]
-    print(f"staged {SPACE}:")
-    for fn in files:
-        print(f"  {fn:<24}{os.path.getsize(os.path.join(SPACE, fn)):>10,} bytes")
-    if dry_run:
-        print("\n--dry-run: nothing uploaded.")
-        return
-
-    from huggingface_hub import HfApi
-    api = HfApi()
-    api.create_repo(repo_id, repo_type="space", space_sdk="gradio",
-                    private=private, exist_ok=True)
-    api.upload_folder(folder_path=SPACE, repo_id=repo_id, repo_type="space",
-                      ignore_patterns=skip)
-    print(f"\nhttps://huggingface.co/spaces/{repo_id}")
-
-
 def main():
     ap = argparse.ArgumentParser(description="Publish Tiny SQL GPT to the Hub")
     ap.add_argument("--repo-id", required=True, help="e.g. yourname/tiny-sql-gpt")
     ap.add_argument("--ckpt", default=os.path.join(HERE, "checkpoints", "tiny.pt"))
     ap.add_argument("--github", help="OWNER/REPO for card links (default: git origin)")
-    ap.add_argument("--space", action="store_true",
-                    help="publish space/ as a Gradio Space instead of the model")
     ap.add_argument("--private", action="store_true")
     ap.add_argument("--dry-run", action="store_true",
                     help="stage and print, upload nothing")
     args = ap.parse_args()
-
-    if args.space:
-        push_space(args.repo_id, args.private, args.dry_run)
-        return
 
     stage(args.repo_id, args.ckpt, args.github)
 
